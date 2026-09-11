@@ -97,9 +97,9 @@ should remain version-controlled.
 `.env.example` documents the required variables without containing secrets:
 
 ```dotenv
-WEB_BASE_URL=https://astroflow.wingflows.com/
+WEB_BASE_URL=https://example.com/
 # Optional. Defaults to WEB_BASE_URL when omitted.
-# API_BASE_URL=https://astroflow.wingflows.com/
+# API_BASE_URL=https://example.com/
 ```
 
 Copy it to `.env` and change `WEB_BASE_URL` when targeting another environment.
@@ -213,7 +213,7 @@ jobs only when you need finer-grained gates.
 Each successful smoke/API run deploys the HTML reports to GitHub Pages and the
 PR comment links to that site (`/`, `/smoke/`, `/api/`). Published site:
 
-https://gonzarocha21.github.io/interview_hiphip/
+https://gonzarocha21.github.io/playwright-poc/
 
 One-time setup:
 

@@ -12,23 +12,34 @@ export default defineConfig({
   reporter: [
     [process.env.CI ? 'line' : 'list'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
+    ['json', { outputFile: 'test-results/results.json' }],
   ],
   use: {
-    baseURL: environmentConfig.baseUrl,
+    baseURL: environmentConfig.webBaseUrl,
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },
   projects: [
     {
+      name: 'api',
+      testMatch: 'api/**/*.spec.ts',
+      use: {
+        baseURL: environmentConfig.apiBaseUrl,
+      },
+    },
+    {
       name: 'chromium',
+      testMatch: 'e2e/**/*.spec.ts',
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'firefox',
+      testMatch: 'e2e/**/*.spec.ts',
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
+      testMatch: 'e2e/**/*.spec.ts',
       use: { ...devices['Desktop Safari'] },
     },
   ],

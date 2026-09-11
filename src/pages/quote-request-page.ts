@@ -1,4 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
+
 import {
   QUOTE_SERVICES,
   type QuoteRequestDetails,
@@ -6,7 +7,6 @@ import {
 } from '../models/quote-request';
 
 export class QuoteRequestPage {
-  public readonly heading: Locator;
   private readonly form: Locator;
   private readonly hydratedFormIsland: Locator;
   private readonly firstNameInput: Locator;
@@ -19,6 +19,7 @@ export class QuoteRequestPage {
   private readonly volumeInput: Locator;
   private readonly detailsInput: Locator;
   private readonly submitButton: Locator;
+  public readonly heading: Locator;
 
   public constructor(private readonly page: Page) {
     this.heading = page.getByRole('heading', {
@@ -82,11 +83,12 @@ export class QuoteRequestPage {
     await this.fillQuoteRequest(details);
 
     const [confirmationMessage] = await Promise.all([
-      this.page.waitForEvent('dialog').then(async (dialog) => {
+      (async () => {
+        const dialog = await this.page.waitForEvent('dialog');
         const message = dialog.message();
         await dialog.accept();
         return message;
-      }),
+      })(),
       this.submitButton.click(),
     ]);
 

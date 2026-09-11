@@ -1,4 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
+
 import {
   INDUSTRIES,
   QUOTE_SERVICES,
@@ -28,7 +29,13 @@ const PROJECT_DETAILS = [
 
 function randomItem<Item>(values: readonly [Item, ...Item[]]): Item {
   const randomIndex = randomInt(values.length);
-  return values[randomIndex]!;
+  const item = values[randomIndex];
+
+  if (item === undefined) {
+    throw new Error('Expected a value from a non-empty list.');
+  }
+
+  return item;
 }
 
 // Converts a UUID into a fixed-length numeric suffix for the test phone number.

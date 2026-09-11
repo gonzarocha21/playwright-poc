@@ -4,10 +4,12 @@
   "private": true,
   "description": "Playwright end-to-end test suite for AstroFlow",
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "npm": ">=10"
   },
   "scripts": {
     "test": "playwright test",
+    "test:api": "playwright test --project=api",
     "test:smoke": "playwright test --grep @smoke",
     "test:smoke:chromium": "playwright test --grep @smoke --project=chromium",
     "test:headed": "playwright test --headed",
@@ -19,16 +21,35 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.55.0",
     "@types/node": "^24.13.4",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-n": "^17.24.0",
+    "eslint-plugin-playwright": "^2.11.0",
+    "eslint-plugin-sonarjs": "^4.2.0",
+    "eslint-plugin-unicorn": "^74.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.70.0"
+  },
+  "lint-staged": {
+    "*.{ts,mjs,cjs,js}": [
+      "prettier --write",
+      "eslint --fix --max-warnings=0"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   }
 }

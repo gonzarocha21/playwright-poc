@@ -1,0 +1,67 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: 'chore'
+      include: 'scope'
+    groups:
+      eslint:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@eslint/*'
+          - 'typescript-eslint'
+        update-types:
+          - minor
+          - patch
+      playwright:
+        patterns:
+          - '@playwright/*'
+        update-types:
+          - minor
+          - patch
+      typescript:
+        patterns:
+          - 'typescript'
+          - '@types/node'
+        update-types:
+          - minor
+          - patch
+      git-hooks:
+        patterns:
+          - 'husky'
+          - 'lint-staged'
+          - '@commitlint/*'
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: 'chore'
+      include: 'scope'
+    groups:
+      github-actions:
+        patterns:
+          - '*'

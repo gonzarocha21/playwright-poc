@@ -1,0 +1,46 @@
+version: 1
+fail-on: info
+
+scanners:
+  gitleaks:
+    enabled: true
+  zizmor:
+    enabled: true
+  actionlint:
+    enabled: true
+  poutine:
+    enabled: true
+  semgrep:
+    enabled: true
+    rulesets:
+      - p/security-audit
+      - p/secrets
+  osv-scanner:
+    enabled: true
+  trivy:
+    enabled: true
+    ignore-unfixed: true
+  checkov:
+    enabled: true
+
+suppressions:
+  # poutine flags skaldlab/muninn because Skald Lab is not a Marketplace-verified
+  # creator. The action is pinned to a release SHA in .github/workflows/muninn.yml.
+  - tool: poutine
+    rule-id: github_action_from_unverified_creator_used
+    reason: >-
+      Accepted: skaldlab/muninn is the publisher of the Muninn scanner itself,
+      pinned to a release SHA in .github/workflows/muninn.yml.
+    expires: ''
+
+  # checkov CKV_GHA_7 rejects any workflow_dispatch inputs. Quality Gate needs a
+  # target_environment choice so manual runs can select staging vs production;
+  # those inputs only select already-configured Environment variables and do not
+  # alter how artifacts are built.
+  - tool: checkov
+    rule-id: CKV_GHA_7
+    reason: >-
+      Accepted: quality-gate.yml workflow_dispatch inputs select the GitHub
+      Environment for WEB_BASE_URL/API_BASE_URL; they do not change build entry
+      points or artifact construction.
+    expires: ''

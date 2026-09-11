@@ -1,0 +1,497 @@
+name: Quality Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Application environment to test against
+        type: choice
+        required: true
+        default: staging
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Resolves WEB_BASE_URL / API_BASE_URL from the selected GitHub Environment.
+  # Use Environment *variables* for public URLs — not secrets.
+  config:
+    name: Resolve environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || 'staging' }}
+    outputs:
+      target_environment: ${{ steps.export.outputs.target_environment }}
+      web_base_url: ${{ steps.export.outputs.web_base_url }}
+      api_base_url: ${{ steps.export.outputs.api_base_url }}
+    steps:
+      - name: Export environment URLs
+        id: export
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.target_environment || 'staging' }}
+          WEB_BASE_URL: ${{ vars.WEB_BASE_URL }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${WEB_BASE_URL}" ]]; then
+            echo "::error::WEB_BASE_URL is not set for GitHub Environment '${TARGET_ENVIRONMENT}'. Add it under Settings → Environments → ${TARGET_ENVIRONMENT} → Environment variables (not secrets)."
+            exit 1
+          fi
+
+          {
+            echo "target_environment=${TARGET_ENVIRONMENT}"
+            echo "web_base_url=${WEB_BASE_URL}"
+            echo "api_base_url=${API_BASE_URL:-${WEB_BASE_URL}}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "Using environment '${TARGET_ENVIRONMENT}'"
+          echo "WEB_BASE_URL=${WEB_BASE_URL}"
+          echo "API_BASE_URL=${API_BASE_URL:-${WEB_BASE_URL}}"
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Audit dependencies
+        run: npm run audit
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check lint rules
+        run: npm run lint
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check formatting
+        run: npm run format:check
+
+  smoke:
+    name: Chromium smoke
+    needs:
+      - audit
+      - typecheck
+      - lint
+      - format
+      - config
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEB_BASE_URL: ${{ needs.config.outputs.web_base_url }}
+      API_BASE_URL: ${{ needs.config.outputs.api_base_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Chromium smoke tests
+        run: npm run test:smoke:chromium
+
+      - name: Upload Playwright report and failure artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-smoke-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  api:
+    name: API
+    needs:
+      - audit
+      - typecheck
+      - lint
+      - format
+      - config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WEB_BASE_URL: ${{ needs.config.outputs.web_base_url }}
+      API_BASE_URL: ${{ needs.config.outputs.api_base_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run API tests
+        run: npm run test:api
+
+      - name: Upload Playwright report and failure artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-api-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  report-results:
+    name: Report test results
+    if: ${{ !cancelled() && contains(fromJSON('["success","failure"]'), needs.smoke.result) && contains(fromJSON('["success","failure"]'), needs.api.result) }}
+    needs:
+      - smoke
+      - api
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+    outputs:
+      smoke_summary: ${{ steps.site.outputs.smoke_summary }}
+      api_summary: ${{ steps.site.outputs.api_summary }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download Chromium smoke report
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: playwright-smoke-report
+          path: artifacts/smoke
+
+      - name: Download API report
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: playwright-api-report
+          path: artifacts/api
+
+      - name: Build report site
+        id: site
+        env:
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          API_RESULT: ${{ needs.api.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p site/smoke site/api
+
+          if [[ -d artifacts/smoke/playwright-report ]]; then
+            cp -R artifacts/smoke/playwright-report/. site/smoke/
+          fi
+          if [[ -d artifacts/api/playwright-report ]]; then
+            cp -R artifacts/api/playwright-report/. site/api/
+          fi
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          function readStats(resultsPath) {
+            try {
+              const report = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+              return report.stats ?? null;
+            } catch {
+              return null;
+            }
+          }
+
+          function formatStats(stats, jobResult) {
+            if (!stats) {
+              return `_No results JSON (${jobResult})_`;
+            }
+            const passed = stats.expected ?? 0;
+            const failed = stats.unexpected ?? 0;
+            const flaky = stats.flaky ?? 0;
+            const skipped = stats.skipped ?? 0;
+            const durationSec = ((stats.duration ?? 0) / 1000).toFixed(1);
+            return `${passed} passed, ${failed} failed, ${flaky} flaky, ${skipped} skipped (${durationSec}s)`;
+          }
+
+          const smokeStats = readStats('artifacts/smoke/test-results/results.json');
+          const apiStats = readStats('artifacts/api/test-results/results.json');
+          const smokeResult = process.env.SMOKE_RESULT;
+          const apiResult = process.env.API_RESULT;
+          const runUrl = process.env.RUN_URL;
+
+          const smokeLine = formatStats(smokeStats, smokeResult);
+          const apiLine = formatStats(apiStats, apiResult);
+
+          fs.writeFileSync(
+            path.join('site', 'index.html'),
+            `<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1" />
+            <title>Playwright reports</title>
+            <style>
+              body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; }
+              a { color: #0969da; }
+            </style>
+          </head>
+          <body>
+            <h1>Playwright reports</h1>
+            <p>Latest published CI reports for this repository.</p>
+            <ul>
+              <li><a href="./smoke/">Chromium smoke</a> — ${smokeResult}: ${smokeLine}</li>
+              <li><a href="./api/">API</a> — ${apiResult}: ${apiLine}</li>
+            </ul>
+            <p><a href="${runUrl}">Workflow run</a></p>
+          </body>
+          </html>
+          `,
+          );
+
+          fs.writeFileSync(
+            path.join('site', 'summary.json'),
+            JSON.stringify(
+              {
+                smoke: { result: smokeResult, stats: smokeStats, summary: smokeLine },
+                api: { result: apiResult, stats: apiStats, summary: apiLine },
+                runUrl,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+
+          echo "smoke_summary<<SMOKE_EOF" >> "$GITHUB_OUTPUT"
+          node -e "const s=require('./site/summary.json'); process.stdout.write(s.smoke.summary)" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "SMOKE_EOF" >> "$GITHUB_OUTPUT"
+
+          echo "api_summary<<API_EOF" >> "$GITHUB_OUTPUT"
+          node -e "const s=require('./site/summary.json'); process.stdout.write(s.api.summary)" >> "$GITHUB_OUTPUT"
+          echo "" >> "$GITHUB_OUTPUT"
+          echo "API_EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Upload combined report site artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-pages-site
+          path: site/
+          retention-days: 14
+
+  # Publishes the HTML report to GitHub Pages, then comments on the PR with
+  # those URLs. The github-pages Environment must allow deployments from
+  # "All branches" (Settings → Environments → github-pages), otherwise PR
+  # merge refs are rejected.
+  deploy-pages:
+    name: Deploy Pages
+    if: ${{ !cancelled() && contains(fromJSON('["success","failure"]'), needs.smoke.result) && contains(fromJSON('["success","failure"]'), needs.api.result) && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) }}
+    needs:
+      - smoke
+      - api
+      - report-results
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      pull-requests: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Download report site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: playwright-pages-site
+          path: site
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+      - name: Comment results on pull request
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          API_RESULT: ${{ needs.api.result }}
+          SMOKE_SUMMARY: ${{ needs.report-results.outputs.smoke_summary }}
+          API_SUMMARY: ${{ needs.report-results.outputs.api_summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+
+          MARKER='<!-- playwright-ci-report -->'
+          BASE_URL="${PAGE_URL%/}"
+
+          BODY=$(cat <<EOF
+          ${MARKER}
+          ## Playwright results
+
+          | Suite | Result | Details |
+          | --- | --- | --- |
+          | Chromium smoke | \`${SMOKE_RESULT}\` | ${SMOKE_SUMMARY} |
+          | API | \`${API_RESULT}\` | ${API_SUMMARY} |
+
+          - [HTML report (GitHub Pages)](${BASE_URL}/)
+          - [Smoke report](${BASE_URL}/smoke/)
+          - [API report](${BASE_URL}/api/)
+          - [Workflow run](${RUN_URL})
+          EOF
+          )
+
+          COMMENT_ID="$(
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --paginate \
+              --jq ".[] | select(.body | contains(\"${MARKER}\")) | .id" \
+              | head -n 1
+          )"
+
+          if [[ -n "${COMMENT_ID}" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+              -f body="${BODY}"
+          else
+            gh pr comment "${PR_NUMBER}" --body "${BODY}"
+          fi
+
+  # Single required check that aggregates the pipeline above.
+  # Prefer requiring this in branch protection; require individual jobs only
+  # when you need finer-grained merge gates.
+  quality-gate:
+    name: Quality gate
+    if: ${{ always() }}
+    needs:
+      - smoke
+      - api
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm smoke and API pipelines passed
+        run: |
+          results=(
+            "smoke=${{ needs.smoke.result }}"
+            "api=${{ needs.api.result }}"
+          )
+
+          failed=0
+          for entry in "${results[@]}"; do
+            job="${entry%%=*}"
+            result="${entry#*=}"
+            echo "${job} → ${result}"
+            if [[ "${result}" != "success" ]]; then
+              failed=1
+            fi
+          done
+
+          exit "${failed}"

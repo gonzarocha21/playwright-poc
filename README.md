@@ -211,14 +211,21 @@ jobs only when you need finer-grained gates.
 ### GitHub Pages (Playwright reports)
 
 Each successful smoke/API run deploys the HTML reports to GitHub Pages and the
-PR comment links to that site (`/`, `/smoke/`, `/api/`).
+PR comment links to that site (`/`, `/smoke/`, `/api/`). Published site:
+
+https://gonzarocha21.github.io/interview_hiphip/
 
 One-time setup:
 
-1. **Settings → Pages** → **Build and deployment → Source** → **GitHub Actions**.
-2. **Settings → Environments → `github-pages`** → **Deployment branches** →
-   **All branches** (required so PR merge refs can deploy; the default
-   “Only the default branch” setting rejects `refs/pull/*/merge`).
+1. The repository must be **public**, or the owner needs **GitHub Pro** /
+   Team / Enterprise. GitHub Free cannot enable Pages on a private repository.
+2. **Settings → Pages** → **Build and deployment → Source** → **GitHub Actions**
+   (not “Deploy from a branch”). Creating the `github-pages` Environment alone
+   is not enough; Pages must be enabled here.
+3. **Settings → Environments → `github-pages`** → **Deployment branches and
+   tags** → **No restriction**, then save. Enabling Pages often resets this to
+   **Only the default branch** (`main`), which rejects PR merge refs such as
+   `refs/pull/*/merge`.
 
 Pull requests intentionally use Chromium smoke coverage for fast feedback. The
 normal local suite covers Chromium, Firefox, and WebKit. Broader CI browser
@@ -238,7 +245,12 @@ ecosystem to five open update pull requests.
   installation. Playwright installs its required browser explicitly.
 - [Muninn](https://github.com/skaldlab/muninn) runs on pull requests
   (`.github/workflows/muninn.yml`) for secrets, SAST, CI/CD, dependency, and IaC
-  findings. Configure scanners and suppressions in `muninn.yml`.
+  findings. Configure scanners and suppressions in `muninn.yml`. Muninn posts a
+  PR comment and uploads SARIF to Code scanning. One-time setup: **Settings →
+  Advanced Security → Code scanning → CodeQL analysis → Set up → Default** (or
+  otherwise enable Code scanning). Without that, `upload-sarif` fails with
+  “Code scanning is not enabled,” even though the workflow already has
+  `security-events: write`.
 - Credentials belong in local ignored environment files or GitHub Secrets. They
   must not appear in test data, configuration committed to Git, console output,
   or workflow source.
